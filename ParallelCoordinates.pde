@@ -20,6 +20,7 @@ class ParallelCoordinates {
   boolean needsGeometry = true;
   boolean bounding = false;
 
+  float columnWidth;
 
   // Tooltip stuff
   DataPoint[] hovered;
@@ -152,7 +153,7 @@ class ParallelCoordinates {
   void recalculateGeometry() {
     /* Recalculate display objects, update pickbuffers */
     int numColumns = numAttributes - 1;
-    float columnWidth = float(w) / float(numColumns);
+    columnWidth = float(w) / float(numColumns);
 
 
     float aX = 0.0;
@@ -256,16 +257,21 @@ class ParallelCoordinates {
     textAlign(LEFT, TOP);
 
     int ttH = tooltipSize+2;
-    int ttX = mouseX;
     int ttY = mouseY-ttH;
+
+    int attrIdx = floor( (float(mouseX - x) / columnWidth) + 0.5);
+    attrIdx = max(min(attrIdx, numAttributes-1), 0);
+    String attrName = axes[attrIdx].name;
 
     for (int i = 0; i < numHovered; i++) {
       DataPoint point = hovered[i];
-      float ttWidth = textWidth(point.label)+4;
+      String labelText = "(\""+ point.name + "\", " + attrName + ": " + point.attributes[attrIdx] + ")";
+      float ttWidth = textWidth(labelText)+4;
+      float ttX = max(mouseX-ttWidth,0);
       fill(255);
       rect(ttX, ttY, ttWidth, ttH);
       fill(0);
-      text(point.label, ttX+2, ttY);
+      text(labelText, ttX+2, ttY);
       ttY -= ttH;
     }
 
