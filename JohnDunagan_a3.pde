@@ -6,7 +6,7 @@ boolean ENABLE_TOOLTIP = true; // Disable for better performance but less inform
 int TOP_MARGIN = 100;
 int BOTTOM_MARGIN = 100;
 int LEFT_MARGIN = 100;
-int RIGHT_MARGIN = 100;s
+int RIGHT_MARGIN = 100;
 
 // Parallel coordinates chart object
 ParallelCoordinates pc;
@@ -15,8 +15,7 @@ void setup() {
   size(1200,600);
   //surface.setResizable(true);
 
-  // Load data into table
-  Table table = loadTable(DATA_FILE_PATH,"csv");
+  String[] data = loadStrings(DATA_FILE_PATH);
 
   // Initialize parallel coordinates objects
   pc = new ParallelCoordinates(
@@ -24,10 +23,11 @@ void setup() {
     TOP_MARGIN,
     width - LEFT_MARGIN - RIGHT_MARGIN,
     height - BOTTOM_MARGIN - TOP_MARGIN,
-    table);
+    data);
 
   // Enable or disable tooltip
   pc.setTooltipEnabled(ENABLE_TOOLTIP);
+
 }
 
 void draw() {
