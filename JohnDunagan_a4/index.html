@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>D3 Test</title>
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <script src="https://d3js.org/topojson.v2.min.js"></script>
+  <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+  <style>
+
+  body {
+    font-family: Verdana;
+    font-size:12px;
+  }
+
+  /* Map/State Styles */
+  .state-label{
+    fill: black;
+    text-anchor: middle;
+    font-family: Verdana;
+    font-size:12px;
+  }
+
+  .state-path:hover {
+    opacity:0.8;
+  }
+
+  .state-ev{
+    fill: black;
+    text-anchor: middle;
+    font-family: Verdana;
+    font-size:10px;
+  }
+
+  .state-borders {
+    fill: none;
+    stroke: #000;
+    stroke-width: 0.5px;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    pointer-events: none;
+  }
+
+  /* Year selector */
+  .year-label {
+    fill: black;
+    text-anchor: middle;
+    font-family: Verdana;
+    font-size:10px;
+  }
+
+  .year-circle:hover {
+    stroke:black;
+    stroke-width:2;
+    cursor:pointer;
+  }
+
+  /* Legend */
+
+  .legend {
+    font-size: 10px;
+    text-anchor: middle;
+  }
+
+  /* Tooltip */
+
+  #tooltip {
+    padding:4px;
+    visibility: hidden;
+    position: absolute;
+    border-color:black;
+    border:1px;
+    border-style:solid;
+    background:white;
+    pointer-events: none;
+  }
+
+  #tt-name {
+    font-size:14px;
+  }
+
+  #tt-r {
+    color: #b2182b;
+  }
+
+  #tt-d {
+    color: #2166ac;
+  }
+
+  </style>
+</head>
+<body>
+<script>
+
+// Display constants
+var width = 960;
+var height = 800;
+var colors = d3.schemeRdBu[10];
+
+var selectorHeight = 40;
+var selectorPad = 50;
+var selectorRadius = 10;
+
+var legendY = 650;
+var legendWidth = 700;
+var legendHeight = 40;
+
+var path = d3.geoPath();
+
+var codeLookup = {};
+var years = []
+
+
+// Load data sequentially
+var q = d3.queue(1);
+q.defer(loadGeography);
+q.defer(loadStateNames);
+q.defer(loadResults);
+
+// Wait for data to load to setup graphics
+q.awaitAll(function(error) {
+  var svg = d3.select("body")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  var tooltip = d3.select("#tooltip");
+
+  var map = svg.append("g")
+    .attr("class", "map")
+    .attr("transform", "translate(0,"+selectorHeight+")");
+
+  // Draw the map
+  var stateGroups = map.selectAll("g")
+    .data(states)
+    .enter().append("g")
+    .attr("class", "state-g")
+    .attr("id", function(d) { return d.code})
+    .on("mouseover", function(d) {
+      //Tooltipping logic
+      res = d.results[currentYear];
+      if (res == undefined) {
+        return;
+      }
+
+      tooltip.select("#tt-name").text(d.name);
+      tooltip.select("#tt-d-cand").text(res.d_candidate);
+      tooltip.select("#tt-r-cand").text(res.r_candidate);
+      tooltip.select("#tt-d-votes").text(res.d_votes);
+      tooltip.select("#tt-r-votes").text(res.r_votes);
+      tooltip.select("#tt-d-percent").text(res.d_percent.toFixed(2));
+      tooltip.select("#tt-r-percent").text(res.r_percent.toFixed(2));
+      tooltip.select("#tt-ev").text(res.total_ev);
+      tooltip.style("left", d3.event.pageX+"px");
+      tooltip.style("top", d3.event.pageY+"px");
+      tooltip.style("visibility", "visible");
+    })
+    .on("mouseout", function(d) { tooltip.style("visibility", "hidden")});
+
+  // Actual state shapes
+  var statePaths = stateGroups.append("path")
+    .attr("class", "state-path")
+    .attr("d", path);
+
+  // State abbreviation labels
+  var stateLabels = stateGroups.append("text")
+    .attr("class", "state-label")
+    .text(function(d) { return d.code})
+    .attr("x", function(d) {return path.centroid(d)[0]})
+    .attr("y", function(d) {return path.centroid(d)[1]})
+    .attr("pointer-events", "none");
+
+  // State electoral college vote label (not tooltip)
+  var stateEVs = stateGroups.append("text")
+    .attr("class", "state-ev")
+    .attr("x", function(d) {return path.centroid(d)[0]})
+    .attr("y", function(d) {return path.centroid(d)[1]+ 10});
+
+  //
+  var stateBorders = map.append("path")
+    .attr("class", "state-borders")
+    .attr("d", borders);
+
+  var percentScale = d3.scaleQuantize()
+    .domain([-100,100])
+    .range(colors);
+
+  var minYear = d3.min(years, function(yr) { return yr.year});
+  var maxYear = d3.max(years, function(yr) { return yr.year});
+
+  var yearScale = d3.scaleLinear()
+    .domain([minYear, maxYear])
+    .range([selectorPad, width-selectorPad]);
+
+  var yearBar = svg.append("g")
+    .attr("class", "year-bar");
+
+  yearBar.append("line")
+    .attr("stroke", "black")
+    .attr("stroke-dasharray", "2, 3")
+    .attr("x1", yearScale(minYear))
+    .attr("y1", selectorHeight/2.0)
+    .attr("x2", yearScale(maxYear))
+    .attr("y2", selectorHeight/2.0)
+
+  // Setup timeline (referred to as "year selector")
+  var yearSelectors = yearBar.selectAll("g")
+    .data(years)
+    .enter()
+    .append("g")
+    .attr("class", "year-selector")
+    .attr("transform", function(d) {
+      return "translate(" + yearScale(d.year) + "," + selectorHeight/2.0 + ")";
+    });
+
+  var yearCircles = yearSelectors.append("circle")
+    .attr("class", "year-circle")
+    .attr('r', selectorRadius)
+    .attr("fill", function(d) { return (d.party == "R") ? colors[2] : colors[colors.length-2] });
+
+  yearSelectors.append("text")
+    .attr("class", "year-label")
+    .text(function(d) { return d.year})
+    .attr("fill", "black")
+    .attr("y", selectorHeight - 10 + "px");
+
+  function changeYear(year) {
+    // Change y
+    currentYear = year;
+    statePaths.attr("fill", function(d) {
+      res = d.results[year];
+      if (res == undefined) {
+        return "white";
+      } else {
+        return percentScale(res.win_percent);
+      }
+    })
+
+    yearCircles.attr("stroke","none")
+      .each(function(d) {
+        if (d.year == year) {
+          d3.select(this).attr("stroke", "black").attr("stroke-width", 3);
+        }
+      })
+
+    stateEVs.text(function(d) {
+      res = d.results[year];
+      if (res == undefined) {
+        return 0;
+      } else {
+        return res.total_ev;
+      }
+    })
+  }
+
+  yearCircles.on("click", function(d) { changeYear(d.year)});
+
+  // Set default year
+  changeYear(2016);
+
+  // Draw legend by hand
+  var legend = svg.append("g")
+    .attr("class", "legend")
+    .attr("transform", "translate(" + ((width-legendWidth) / 2.0) + "," + legendY + ")");
+
+  legend.append("text")
+    .text("Percentage Difference (Democrat - Repulican)")
+    .attr("x", legendWidth/2.0)
+    .attr("y", legendHeight);
+
+  var binSize = (200.0) / colors.length;
+  var binWidth = (legendWidth*1.0) / colors.length;
+  for (var i = 0; i < colors.length; i++) {
+    var start = (binSize*i) - 100;
+    var end = start + binSize;
+    var group = legend.append("g")
+      .attr("transform", "translate(" + (i * binWidth) + ", 0)");
+
+    group.append("rect")
+      .attr("height", legendHeight/4.0)
+      .attr("width", binWidth)
+      .attr("fill", percentScale(start+(binSize/2)));
+
+    group.append("text")
+      .attr("y", legendHeight/4.0+10)
+      .attr("x", binWidth/2.0)
+      .text(start+" to "+ end);
+  }
+
+  // Special label exceptions (small states and states with odd centroids)
+  displaceLabel("#DC", 50, 50, true);
+  displaceLabel("#MD", 50, 20, true);
+  displaceLabel("#DE", 50, 0, true);
+  displaceLabel("#RI", 30, 20, true);
+  displaceLabel("#MA", 30, -20, true);
+
+  displaceLabel("#FL", 15, 0, false);
+  displaceLabel("#LA", -15, 0, false);
+  displaceLabel("#MI", 10, 10, false);
+  displaceLabel("#CA", -5, 0, false);
+});
+
+// Function to move a state's label (and optionally draw a line from state to label)
+function displaceLabel(id, dx, dy, useline) {
+  var group = d3.select(id);
+  var label = group.select(".state-label");
+  var oldX = parseFloat(label.attr("x"));
+  var oldY = parseFloat(label.attr("y"));
+
+  group.selectAll("text").attr("dx", dx).attr("dy", dy);
+  if (useline) {
+    group.append("line")
+      .style("stroke", "black")
+      .style("stroke-width", 1)
+      .attr("x1", oldX)
+      .attr("y1", oldY)
+      .attr("x2", oldX + dx*0.8)
+      .attr("y2", oldY + dy*0.8);
+  }
+}
+
+
+// Subroutines for loading data
+
+function loadGeography(callback) {
+  d3.json("https://d3js.org/us-10m.v1.json", function(error, geo) {
+    states = topojson.feature(geo, geo.objects.states).features;
+    borders = path(topojson.mesh(geo, geo.objects.states));
+    states.forEach(function(state) {state.id = parseInt(state.id)});
+    callback(error);
+  });
+}
+
+function loadStateNames(callback) {
+  d3.tsv("geo/us-state-names.tsv", function(error, names) {
+    var idLookup = {};
+    names.forEach(function(item) {
+      idLookup[parseInt(item.id)] = item;
+    })
+
+    states.forEach(function(state) {
+      var info = idLookup[state.id];
+      state.name = info.name;
+      state.code = info.code;
+      codeLookup[state.code] = state;
+      state.results = {};
+    });
+    callback(error);
+  });
+}
+
+function loadResults(callback) {
+  var resultQueue = d3.queue();
+  d3.csv("data/yearwise-winner.csv", function(error, data) {
+    years = data;
+    years.forEach(function(yr) {
+      yr.year = parseInt(yr.YEAR);
+      yr.party = yr.PARTY;
+      delete yr.YEAR;
+      delete yr.PARTY;
+
+      resultQueue.defer(loadResultFile, "data/election-results-"+yr.year+".csv");
+    })
+    years.sort(function(a,b) { return a.year - b.year});
+
+    resultQueue.await(function(error) {
+      callback(error);
+    });
+  });
+}
+
+function loadResultFile(filename, callback) {
+  d3.csv(filename, function(error, data) {
+    data.forEach(function(row) {
+      var state = codeLookup[row.Abbreviation];
+      if (state == undefined) {
+        return;
+      }
+
+      var d_votes = parseInt(row.D_Votes.replace(/,/g, ''))
+      var r_votes = parseInt(row.R_Votes.replace(/,/g, ''))
+      var total_votes = d_votes + r_votes;
+      var d_percent = (d_votes*100.0) / total_votes;
+      var r_percent = (r_votes*100.0) / total_votes;
+      var win_percent = d_percent - r_percent;
+
+      var results = {
+        "d_votes" : d_votes,
+        "r_votes" : r_votes,
+        "d_percent" : d_percent,
+        "r_percent" : r_percent,
+        "d_candidate" : row.D_Nominee,
+        "r_candidate" : row.R_Nominee,
+        "win_percent" : win_percent,
+        "total_ev" : parseInt(row.Total_EV)
+      };
+      state.results[parseInt(row.Year)] = results;
+    });
+    callback(error);
+  });
+}
+</script>
+<div id="tooltip">
+  <div><span id="tt-name"></span></div>
+  <div><span id="tt-ev"></span> electoral votes</div>
+  <div id="tt-r">
+    <span id="tt-r-cand"></span>:
+    <span id="tt-r-votes"></span>
+    (<span id="tt-r-percent"></span>%)
+  </div>
+  <div id="tt-d">
+    <span id="tt-d-cand"></span>:
+    <span id="tt-d-votes"></span>
+    (<span id="tt-d-percent"></span>%)
+  </div>
+</div>
+</body>
+</html>
