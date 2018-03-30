@@ -1,0 +1,970 @@
+<!doctype html><html class="no-js" lang="en"><head><script>
+   try {var _sf_startpt=(new Date()).getTime();} catch(e){}
+</script>
+<title>Kids Still Plagued By Obesity In U.S., Report Finds : Shots - Health News : NPR</title>
+<meta id="speakable" itemprop="cssSelector" content="[data-is-speakable]" />
+<meta charset="utf-8" />
+
+<meta name="description" content="The childhood obesity epidemic rages on in the United States, with a big surge among the youngest kids, according to the latest government data." />
+
+<link rel="stylesheet" data-persist="true" media="screen, print" href="https://s.npr.org/templates/javascript/dist/bundles/persistent-css-00c60f74826c019c014f.css" />
+<link rel="stylesheet" media="screen, print" href="https://s.npr.org/templates/javascript/dist/bundles/newsStory-css-00c60f74826c019c014f.css" />
+<link rel="stylesheet" media="screen" href="https://s.npr.org/branding/sections/health-shots/branding.css" />
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<style>
+
+#chart-svg {
+  margin-top:20px;
+  margin-bottom: 20px;
+}
+
+.button {
+  cursor:pointer;
+}
+
+.button>text {
+  user-select: none;
+  font-size:10px;
+}
+
+.button>rect {
+  fill:white;
+  stroke:black;
+}
+
+.chart-title {
+  font-size:11pt;
+}
+
+#combined-title {
+  font-size:14pt;
+}
+
+.selector-label {
+  font-size:12px;
+}
+
+.axis-label {
+  font-size:11pt;
+}
+
+.legend-label {
+  font-size:12px;
+}
+
+.tt-region {
+  fill: none;
+  stroke: none;
+  pointer-events: all;
+}
+
+.series-point {
+  fill: none;
+  stroke: black;
+  stroke-width:1;
+  pointer-events: visible;
+}
+
+#tooltip {
+  padding:4px;
+  font-size:12px;
+  visibility: hidden;
+  position: absolute;
+  border-color:black;
+  border:1px;
+  border-style:solid;
+  background:white;
+  pointer-events: none;
+}
+
+</style>
+<script>
+
+var POINTS_ENABLED = true;
+
+var svgHeight = 600;
+var svgWidth = 680;
+
+var legendHeight = 40;
+var legendPadSides= 50;
+var legendPadTopBottom = 10;
+
+var toolbarHeight = 60;
+var toolbarPadBottom = 15;
+var toolbarPadTop = 25;
+
+var chartHeight = 450;
+var chartPadTop = 100;
+var chartPadBottom = 60;
+var chartPadLeft = 60;
+var chartPadRight = 20;
+
+var combinedTitleMargin = 50;
+
+var titleMargin = 10;
+var xAxisMargin = 40;
+var yAxisMargin = 60;
+
+var splitRatio = 0.5;
+var splitPad = 20;
+
+var selectorLabelMargin = 6;
+
+var ageSelectorWidth = 230;
+var ageSelectorX = chartPadLeft;
+
+var genderSelectorWidth = 100;
+var genderSelectorX = 300+splitPad;
+
+var detailSelectorWidth = 100;
+var detailSelectorX = svgWidth-chartPadRight-detailSelectorWidth;
+
+var ages = ["2-5","6-8","9-11","12-15","16-19"];
+var genders = ["male", "female"];
+
+var measures = ['overweight', 'class1', 'class2', 'class3'];
+var palette = ["#fecc5c","#fd8d3c","#f03b20","#bd0026"]
+var highlights = ["#ffc33d","#f9781b","#fc2505","#e5002e"]
+
+var legendLabels = [
+    'Overweight',
+    'Class 1 Obese',
+    'Class 2 Obese',
+    'Class 3 Obese'];
+
+var currentSeries;
+var ageFilter = "all";
+var genderFilter = "all";
+
+var detailAttr = "age";
+var selectedYear = null;
+var previousDetailAttr = null;
+
+d3.csv('data/master.csv', function(d) {
+  d.range= d.start_year + '-' + d.end_year;
+  d.start_year = +d.start_year;
+  d.end_year = +d.end_year;
+  d.n = +d.n
+  d.class1 = +d.class1;
+  d.class2 = +d.class2;
+  d.class3 = +d.class3;
+  d.overweight = +d.overweight;
+  return d;
+
+}, function(data) {
+  data.sort(function(d) { return d.start_year; });
+
+  var svg = d3.select("#chart-svg")
+    .attr("width", svgWidth)
+    .attr("height", svgHeight);
+
+  var legend = svg.append("g").attr("id", "legend");
+
+  legend.append("rect")
+    .attr("height", legendHeight)
+    .attr("x", legendPadSides/2)
+    .attr("width", svgWidth - legendPadSides)
+    .style("stroke", "black")
+    .style("fill", "none");
+
+  var toolbar = svg.append("g").attr("id", "toolbar")
+    .attr("transform", "translate(0," + (chartHeight + legendHeight)+ ")");
+
+  toolbar.append("line")
+      .attr("x1", 0)
+      .attr("x2", svgWidth)
+      .attr("y1", 0)
+      .attr("y2", 0)
+      .attr("stroke", "black")
+      .attr("fill", "none");
+
+  var combinedChart = svg.append("g")
+    .attr("id", "combined-chart")
+    .attr("transform", "translate(0," + (legendHeight)+ ")");
+
+  combinedChart.append("text")
+    .attr("id", "combined-title")
+    .attr("text-anchor", "middle")
+    .attr("x", chartPadLeft + (svgWidth - chartPadLeft - chartPadRight)/2)
+    .attr("y", chartPadTop - combinedTitleMargin)
+    .text("NHANES Survey Childhood Obesity Statistics (1999-2016)");
+
+  var seriesWidth = splitRatio * svgWidth;
+  var seriesChart = combinedChart.append("g")
+    .attr("id", "series-chart")
+    .attr("height", chartHeight)
+    .attr("width", seriesWidth);
+
+  var seriesPaths = seriesChart.append("g").attr("id", "series-paths");
+  var yearSelector = seriesChart
+    .append("line")
+    .attr("x1", chartPadLeft)
+    .attr("x2", chartPadLeft)
+    .attr("y1", chartPadTop)
+    .attr("y2", chartHeight-chartPadBottom)
+    .style("stroke","grey");
+  var seriesAxes = seriesChart.append("g").attr("id", "series-axes");
+  var seriesLabels = seriesChart.append("g");
+  var regions = seriesChart.append("g").attr("id", "tt-regions");
+  var seriesPoints = seriesChart.append("g").attr("id", "series-points");
+
+  var detailWidth = (1-splitRatio) * svgWidth;
+  var detailChart = combinedChart.append("g")
+    .attr("id", "detail-chart")
+    .attr("transform", "translate(" + seriesWidth + ",0)")
+    .attr("height", chartHeight)
+    .attr("width", detailWidth);
+
+  detailChart.append("text")
+    .attr("id", "placeholder")
+    .attr("text-anchor", "middle")
+    .attr("x", splitPad + (detailWidth - splitPad - chartPadRight)/2)
+    .attr("y", chartPadTop + (chartHeight - chartPadTop - chartPadBottom)/2)
+    .text("Click on the chart to launch detail view.");
+
+  var tooltip = d3.select("body")
+    .append("div")
+    .attr("id", "tooltip");
+
+  var legendItemWidth = (svgWidth - legendPadSides - legendPadSides) / legendLabels.length;
+  var legendItemHeight= legendHeight - 2*legendPadTopBottom;
+  var legendCircleR = legendItemHeight / 2;
+
+  var legendItems = legend.selectAll("g").data(legendLabels)
+    .enter().append("g")
+    .attr("transform", function(d,i) {
+      return "translate(" + (legendPadSides + (legendItemWidth * i)) + ",0)";
+    });
+
+  legendItems.append("circle")
+    .attr("fill", function(d,i) { return palette[i]})
+    .attr("cy", legendPadTopBottom + legendItemHeight/2)
+    .attr("r", legendCircleR);
+
+  legendItems.append("text")
+    .attr("class", "legend-label")
+    .attr("alignment-baseline", "middle")
+    .attr("x", legendCircleR*2 + 4)
+    .attr("y", legendPadTopBottom + legendItemHeight / 2)
+    .text(function(d) { return d; });
+
+  var years = d3.set(data, function(d){return d.range}).values();
+  years.sort(d3.ascending);
+
+  var maxPercent = d3.max(data, function(d) {
+    return d3.max(measures, function(m) { return d[m]});
+  })
+
+  var seriesXScale = d3.scalePoint()
+    .domain(years)
+    .range([chartPadLeft, seriesWidth-splitPad]);
+
+  var seriesYScale = d3.scaleLinear()
+    .domain([0, maxPercent])
+    .range([chartHeight-chartPadBottom, chartPadTop]);
+
+  var seriesXAxis = d3.axisBottom(seriesXScale)
+    .tickFormat(function(x) { return "'" + x.split("-")[1].substr(2)});
+
+  var seriesYAxis = d3.axisLeft(seriesYScale)
+    .tickFormat(function(x) { return x + "%";});
+
+  seriesAxes.append("g")
+    .attr("transform", "translate(0,"+(chartHeight-chartPadBottom)+")")
+    .call(seriesXAxis);
+
+  seriesAxes.append("g")
+    .attr("transform", "translate(" + chartPadLeft + ",0)")
+    .call(seriesYAxis);
+
+  seriesLabels.append("text")
+    .attr("id","series-title")
+    .attr("class","chart-title")
+    .attr("text-anchor", "middle")
+    .attr("x", chartPadLeft + (seriesWidth-splitPad-chartPadLeft)/2)
+    .attr("y", chartPadTop-titleMargin);
+
+  seriesLabels.append("text")
+    .attr("id", "series-x-axis-label")
+    .attr("class", "axis-label")
+    .attr("text-anchor", "middle")
+    .attr("x", chartPadLeft + (seriesWidth-splitPad-chartPadLeft)/2)
+    .attr("y", chartHeight-chartPadBottom + xAxisMargin)
+    .text("Year");
+
+  seriesLabels.append("text")
+    .attr("id", "series-y-axis-label")
+    .attr("class", "axis-label")
+    .attr("transform", "rotate(-90)")
+    .attr("y", chartPadLeft-yAxisMargin)
+    .attr("x", 0 - (chartPadTop + (chartHeight-chartPadBottom-chartPadTop) / 2))
+    .attr("dy", "1em")
+    .style("text-anchor", "middle")
+    .text("Percentage");
+
+
+  var area = d3.area()
+    .y0(function(d) { return seriesYScale(d.below)})
+    .y1(function(d) {
+      console.log(d);
+      return seriesYScale(d.cumulative)})
+    .x(function(d) { return seriesXScale(d.point.range)});
+
+
+  function selectYear(year) {
+    yearSelector.transition().duration(200)
+      .attr("x1", seriesXScale(year))
+      .attr("x2", seriesXScale(year));
+
+    selectedYear = year;
+    updateDetails();
+  }
+
+  function applyFilter() {
+    currentSeries = getSeries(data, ageFilter, genderFilter);
+    currentSeries.sort(function(a,b) { return a.start_year > b.start_year; })
+
+    var layers = obesityStack(currentSeries);
+    seriesPaths.selectAll("path").data(layers)
+      .enter().append("path");
+
+    seriesPaths.selectAll("path")
+      .transition().duration(200)
+      .attr("d", area)
+      .attr("fill", function(d,i) {return palette[i]});
+
+    combinedChart.select("#combined-title").text(buildCombinedTitle(ageFilter, genderFilter));
+    seriesChart.select("#series-title").text(buildSeriesTitle(ageFilter, genderFilter));
+
+    if (POINTS_ENABLED) {
+      seriesPoints.selectAll("g")
+        .data(layers)
+        .enter()
+        .append("g");
+
+      seriesPoints.selectAll("g")
+        .selectAll("circle")
+        .data(function(d) {
+          return d; })
+        .enter()
+        .append("circle")
+        .attr("class", "series-point")
+        .attr("r",2)
+        .attr("cx", function(d) { return seriesXScale(d.point.range) })
+        .attr("cy", function(d) { return seriesYScale(d.cumulative)});
+
+      var circles = seriesPoints.selectAll("g").selectAll("circle");
+
+      circles.transition().duration(200)
+        .attr("cx", function(d) { return seriesXScale(d.point.range) })
+        .attr("cy", function(d) { return seriesYScale(d.cumulative)})
+        .style("fill", function(d) {return palette[d.measureIdx]});
+
+      circles.on("mouseover", function(d) {
+          var tipText = d.cumulative + "% " + legendLabels[d.measureIdx];
+          tooltip.text(tipText);
+          tooltip.style("left", (d3.event.pageX+10)+"px");
+          tooltip.style("top", (d3.event.pageY-10)+"px");
+          tooltip.style("visibility", "visible");
+        })
+        .on("mousemove", function(d) {
+          tooltip.style("left", (d3.event.pageX+10)+"px");
+          tooltip.style("top", (d3.event.pageY-10)+"px");
+        })
+        .on("mouseout", function(d) {
+          tooltip.style("visibility", "hidden")
+        })
+        .on("click", function(d) {
+          selectYear(d.point.range);
+        })
+      }
+
+  }
+
+  applyFilter();
+
+  // seriesChart.append("g")
+  //     .attr("class", "grid")
+  //     .attr("transform", "translate(" + chartPadLeft +",0)")
+  //     .call(d3.axisLeft(seriesYScale)
+  //         .ticks(4)
+  //         .tickSize(-width + chartPadLeft + chartPadRight)
+  //         .tickFormat(""))
+  //     .attr("opacity",0.2)
+
+  regions.selectAll("rect")
+    .data(years)
+    .enter()
+    .append("rect")
+    .attr("class", "tt-region")
+    .attr("x", function(d,i) {
+      if (i==0) {
+        return seriesXScale(d)
+      } else {
+        return seriesXScale(d) - (0.5*seriesXScale.step());
+      }
+    })
+    .attr("y", chartPadTop)
+    .attr("height", chartHeight-chartPadBottom-chartPadTop)
+    .attr("width", function(d,i) {
+      if (i==0 || i == years.length-1) {
+        return 0.5*seriesXScale.step()
+      } else {
+        return seriesXScale.step()
+      }
+    })
+    .on("click", function(d) {
+      selectYear(d);
+    })
+
+  var detailBars = detailChart.append("g");
+  var detailLabels = detailChart.append("g");
+
+  detailLabels.append("text")
+    .attr("id","detail-title")
+    .attr("class","chart-title")
+    .attr("text-anchor", "middle")
+    .attr("x", splitPad + (detailWidth-2*splitPad)/2)
+    .attr("y", chartPadTop-titleMargin);
+
+  detailLabels.append("text")
+    .attr("id", "detail-x-axis-label")
+    .attr("class", "axis-label")
+    .attr("text-anchor", "middle")
+    .attr("x", splitPad + (detailWidth-splitPad-chartPadRight)/2)
+    .attr("y", chartHeight-chartPadBottom + xAxisMargin);
+
+  var ageScale = d3.scaleBand()
+    .domain(ages)
+    .range([splitPad, detailWidth - chartPadRight])
+    .padding(0.2);
+
+  var genderScale = d3.scaleBand()
+    .domain(genders)
+    .range([splitPad, detailWidth - chartPadRight])
+    .padding(0.6);
+
+  var ageAxis = d3.axisBottom(ageScale);
+  var genderAxis = d3.axisBottom(genderScale);
+
+  var yearLookup = d3.nest().key(function(d) { return d.range }).map(data);
+
+  function updateDetailAxis() {
+    var axis = (detailAttr == "age") ? ageAxis : genderAxis;
+
+    detailLabels.select("#detail-x-axis-label")
+      .text((detailAttr == "age") ? "Age Range" : "Gender");
+
+    detailChart.select(".detail-axis")
+      .transition().duration(200)
+      .attr("opacity",0)
+      .remove();
+
+    detailChart.append("g")
+      .attr("transform", "translate(0,"+(chartHeight-chartPadBottom)+")")
+      .attr("class", "detail-axis")
+      .call(axis)
+      .attr("opacity",0)
+      .transition().duration(200)
+      .attr("opacity",1.0);
+  }
+
+  function updateDetails() {
+    if (selectedYear == null) {
+      return;
+    }
+
+    detailChart.select("#placeholder")
+      .transition().duration(400)
+      .attr("opacity",0.0)
+      .remove();
+
+    detailChart.select("#detail-title")
+      .text(buildDetailTitle(detailAttr, ageFilter, genderFilter, selectedYear));
+
+    var yearStats;
+    var attrs;
+
+    var scale;
+
+    if (detailAttr == "age") {
+      attrs = ages;
+      scale = ageScale;
+
+      if (ageFilter == "all") {
+        yearStats = yearLookup.get(selectedYear)
+          .filter(function(d) { return (d.gender == genderFilter) })
+      } else {
+        yearStats = yearLookup.get(selectedYear)
+          .filter(function(d) {
+            return (d.gender == genderFilter && d.age == ageFilter);
+          })
+      }
+    } else if (detailAttr == "gender") {
+      attrs = genders;
+      scale = genderScale;
+
+      if (genderFilter == "all") {
+        yearStats = yearLookup.get(selectedYear)
+          .filter(function(d) { return (d.age == ageFilter) })
+      } else {
+        yearStats = yearLookup.get(selectedYear)
+          .filter(function(d) {
+            return (d.gender == genderFilter && d.age == ageFilter);
+          })
+      }
+    }
+
+    var byAttr = d3.map(yearStats, function(d) {return d[detailAttr]});
+
+    var columns = attrs.map(function(attr) {
+      var result;
+      var forAttr = byAttr.get(attr);
+      if (typeof(forAttr) != 'undefined') {
+        result = measures.map(
+          function(m,i) {
+            var cumulative = forAttr[m];
+            var below = (i < measures.length-1) ? forAttr[measures[i+1]] : 0;
+            var exclusive = Math.round((cumulative - below)*10)/10;
+            return {cumulative:cumulative, below:below, exclusive:exclusive};
+          });
+      } else {
+        result = new Array(measures.length).fill({cumulative:0, below:0, exclusive:0});
+      }
+
+      result.key = attr;
+      return result;
+    });
+
+
+    if (detailAttr != previousDetailAttr) {
+      updateDetailAxis();
+
+      detailBars.selectAll("g").remove();
+
+      detailBars.selectAll("g")
+        .data(columns)
+        .enter()
+        .append("g")
+        .attr("transform", function(d) {
+          return "translate(" + scale(d.key) + ",0)";
+        })
+        .selectAll("rect")
+        .data(function(d) { return d; })
+        .enter()
+        .append("rect")
+        .attr("class", "detail-bar")
+        .attr("y", seriesYScale(0))
+        .attr("width", scale.bandwidth());
+    } else {
+
+      detailBars.selectAll("g")
+        .data(columns)
+        .selectAll("rect")
+        .data(function(d) {return d;});
+    }
+
+    var rects = detailBars.selectAll("g").selectAll("rect");
+
+
+    rects.transition().duration(200)
+      .attr("fill", function(d,i) { return palette[i] })
+      .attr("y", function(d) {
+        return seriesYScale(d.cumulative)})
+      .attr("height", function(d) {
+        return seriesYScale(d.below) - seriesYScale(d.cumulative);
+      });
+
+    rects.on("mouseover", function(d,i) {
+        var tipText = d.cumulative + "% " + legendLabels[i];
+        tooltip.text(tipText);
+        tooltip.style("left", (d3.event.pageX+10)+"px");
+        tooltip.style("top", (d3.event.pageY-10)+"px");
+        tooltip.style("visibility", "visible");
+      })
+      .on("mousemove", function(d) {
+        tooltip.style("left", (d3.event.pageX+10)+"px");
+        tooltip.style("top", (d3.event.pageY-10)+"px");
+      })
+      .on("mouseout", function(d,i) {
+        tooltip.style("visibility", "hidden")
+      })
+
+    previousDetailAttr = detailAttr;
+  }
+
+
+
+  var ageSelector = toolbar.append("g")
+    .attr("transform", "translate(" + ageSelectorX + "," + toolbarPadTop + ")")
+    .attr("width", ageSelectorWidth)
+    .attr("height", toolbarHeight-toolbarPadTop - toolbarPadBottom)
+
+  buildSelector(ageSelector, "filter by age", ages, ages, function(d) {
+    ageSelector.selectAll("g").selectAll("rect").style("fill", "white");
+    if (d == ageFilter) {
+      ageFilter = "all";
+    } else {
+      ageFilter = d;
+      d3.select(this).select("rect").style("fill", "#bbbbbb");
+    }
+    applyFilter();
+    updateDetails();
+  });
+
+  var genderSelector = toolbar.append("g")
+    .attr("transform", "translate(" + genderSelectorX + "," + toolbarPadTop + ")")
+    .attr("width", genderSelectorWidth)
+    .attr("height", toolbarHeight-toolbarPadTop-toolbarPadBottom)
+
+  buildSelector(genderSelector, "filter by gender", genders, genders, function(d) {
+    genderSelector.selectAll("g").selectAll("rect").style("fill", "white");
+    if (d == genderFilter) {
+      genderFilter = "all";
+    } else {
+      genderFilter = d;
+      d3.select(this).select("rect").style("fill", "#bbbbbb");
+    }
+    applyFilter();
+    updateDetails();
+  });
+
+  var detailSelector = toolbar.append("g")
+    .attr("transform", "translate(" + detailSelectorX + "," + toolbarPadTop + ")")
+    .attr("width", detailSelectorWidth)
+    .attr("height", toolbarHeight-toolbarPadTop-toolbarPadBottom)
+
+  buildSelector(detailSelector, "detail view", ["age", "gender"], ["age", "gender"], function(d) {
+    detailSelector.selectAll("g").selectAll("rect").style("fill", "white");
+    d3.select(this).select("rect").style("fill", "#bbbbbb");
+    detailAttr = d;
+    updateDetails();
+  });
+
+
+  detailSelector.selectAll(".button").each(function(d) {
+    console.log(d);
+    if (d==detailAttr) {
+      d3.select(this).select("rect").style("fill", "bbbbbb");
+    }
+  });
+
+
+})
+
+function buildSelector(group, name, data, labels, callback) {
+  var selectorWidth = +group.attr("width");
+  var buttonWidth = selectorWidth / data.length;
+  var buttonHeight = +group.attr("height");
+
+  var buttons = group.selectAll("g")
+    .data(data)
+    .enter().append("g")
+    .attr("class", "button")
+    .attr("transform", function(d,i) {
+      return "translate(" + (i*buttonWidth) + ",0)"
+    })
+    .on("click", callback);
+
+  buttons.append("rect")
+    .attr("height", buttonHeight)
+    .attr("width", buttonWidth);
+
+  buttons.append("text")
+    .text(function(d,i) { return labels[i]})
+    .attr("text-anchor", "middle")
+    .attr("alignment-baseline", "middle")
+    .attr("x", buttonWidth/2)
+    .attr("y", buttonHeight/2);
+
+  group.append("text")
+    .attr("class", "selector-label")
+    .attr("alignment-baseline", "hanging")
+    .attr("text-anchor", "middle")
+    .attr("y", buttonHeight+selectorLabelMargin)
+    .attr("x", selectorWidth/2)
+    .text(name);
+}
+
+function buildSeriesTitle(age, gender) {
+  return "By Year";
+}
+
+function buildCombinedTitle(age, gender) {
+  var ageString = "Ages " + ((age == "all") ? "2-19" : age);
+  var genderString = genderToNoun(gender);
+
+  return "Percentage of Overweight " + genderString + " (" + ageString + ")";
+}
+
+function buildDetailTitle(attr, age, gender, year) {
+  var attrString;
+
+  if (attr == "age") {
+    attrString = "Age Range";
+  } else if (attr == "gender") {
+    attrString = "Gender";
+  }
+
+  return "By " + attrString + " (" + year + ")";
+}
+
+function genderToNoun(gender) {
+  switch(gender) {
+    case "male":
+      return "Boys";
+    case "female":
+      return "Girls";
+    case "all":
+      return "Children";
+  }
+}
+
+function getSeries(data, age, gender) {
+  return data.filter(function(d) {
+    return (d.age == age) && (d.gender == gender);
+  })
+}
+
+
+function obesityStack(series) {
+  /* Custom stacking routine because data classes are heirarchical, not
+  mutually exclusive (i.e. every Class 3 Obese child is also Class 1 Obese) */
+  return measures.map(function(m,i) {
+    var layer = series.map(function(d) {
+      var cumulative = d[m];
+      var below = (i < measures.length-1) ? d[measures[i+1]] : 0;
+      var exclusive = Math.round((cumulative-below)*10)/10;
+
+      return {
+        cumulative:cumulative,
+        below:below,
+        exclusive:exclusive,
+        measure:m,
+        measureIdx:i,
+        point:d
+      };
+    })
+
+    layer.measure = m;
+    return layer;
+  });
+}
+
+</script>
+
+</head>
+
+<body id="news" class="news tmplBlogNewsStory  story-layout is-buildout no-transcript blog catId133188449 id587985555 " data-pjax-modules="util/env images/lazy-load chartbeat comscore metrics nielsen nielsenDCR rocketfuel copyright auto-refresh navigation/globalnav fitvids googletag dfp globalfooter persistent-audio player/more-options what-input metrics/doubleclickFloodlight metrics/facebookTracking ecommerce recommendations/end-of-story-recommendations-callout jw social/share slideshow images/enlargement swfbuilder contentfooter story/sticky-header story/date-tooltip callout/end-of-story-callout social/sharepop">
+
+  <article class="story story-blogpost"><a id="mainContent"></a><div class="slug-wrap">
+
+      <h3 class="slug">
+          <a href="https://www.npr.org/sections/health-shots/133188449/public-health">Public Health</a>
+      </h3>
+  </div>
+   <!--googleon: index--><div class="storytitle">
+        <h1>No Downturn In Obesity Among U.S. Kids, Report Finds</h1>
+     <input type="hidden" id="title587985555" value="No Downturn In Obesity Among U.S. Kids, Report Finds">
+     <input type="hidden" id="shortTitle587985555" value="No Downturn In Obesity Among U.S. Kids, Report Finds">
+     <input type="hidden" id="modelShortUrl587985555" value="https://n.pr/2EJSylM">
+     <input type="hidden" id="modelFullUrl587985555" value="https://www.npr.org/sections/health-shots/2018/02/26/587985555/no-downturn-in-obesity-among-u-s-kids-report-finds">
+  </div>
+
+  <!-- END CLASS="STORYTITLE" -->
+  <div class="story-tools">
+        <div class="share-tools share-tools--primary" aria-label="Share tools">
+              <ul>
+                    <li class="share-tools__service share-tools__service--facebook"><button class="fbStory587985555" data-share-facebook="{&quot;storyId&quot;: 587985555 }" data-metrics="{&quot;action&quot;:&quot;Click Facebook&quot;,&quot;category&quot;:&quot;Share Tools&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2018\/02\/26\/587985555\/no-downturn-in-obesity-among-u-s-kids-report-finds&quot;}"><b class="share-tools__service-name">Facebook</b></button></li>
+           <li class="share-tools__service share-tools__service--twitter"><button class="story587985555" data-share-twitter="{&quot;storyId&quot;: 587985555 }" data-metrics="{&quot;action&quot;:&quot;Click Twitter&quot;,&quot;category&quot;:&quot;Share Tools&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2018\/02\/26\/587985555\/no-downturn-in-obesity-among-u-s-kids-report-finds&quot;}"><b class="share-tools__service-name">Twitter</b></button></li>
+           <li class="share-tools__service share-tools__service--flipboard"><button class="story587985555" data-share-flipboard="{&quot;storyId&quot;: 587985555 }" data-metrics="{&quot;action&quot;:&quot;Click Flipboard&quot;,&quot;category&quot;:&quot;Share Tools&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2018\/02\/26\/587985555\/no-downturn-in-obesity-among-u-s-kids-report-finds&quot;}"><b class="share-tools__service-name">Flipboard</b></button></li>
+           <li class="share-tools__service share-tools__service--email"><button class="share-tools__email-link" data-story-id="587985555" data-metrics="{&quot;action&quot;:&quot;Click Email a Friend&quot;,&quot;category&quot;:&quot;Share Tools&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2018\/02\/26\/587985555\/no-downturn-in-obesity-among-u-s-kids-report-finds&quot;}"><b class="share-tools__service-name">Email</b></button></li>
+        </ul>
+     </div>
+
+  <!-- END CLASS="SHARE-TOOLS SHARE-TOOLS--PRIMARY" ARIA-LABEL="SHARE TOOLS" -->
+  </div>
+
+  <!-- END CLASS="STORY-TOOLS" -->
+  <div id="story-meta" class="story-meta has-byline">
+        <div class="story-meta__one">
+              <div class="dateblock">
+      <time datetime="2018-02-26T00:02:00-05:00">
+              <span class="date">February 26, 2018</span><span class="time">12:02 AM ET</span>
+      </time>
+  </div>
+     </div>
+
+  <!-- END CLASS="STORY-META__ONE" -->
+     <div class="story-meta__two">
+              <div id="storybyline" class="storybyline-wrap linkLocation">
+                    <div class="bucketwrap byline" id="res587986181" previewtitle="bylines">
+                          <div class="byline-container--block">
+                                <div class="byline byline--block byline--has-link" aria-label="Byline">
+      <div class="byline__photo">
+        <a href="https://www.npr.org/people/146944972/rob-stein" rel="author" data-metrics="{&quot;action&quot;:&quot;Click Byline&quot;,&quot;category&quot;:&quot;Story Metadata&quot;}">
+          <img src="https://media.npr.org/assets/img/2014/07/01/rob-portrait-2-_sq-6aa4df596eca434909b770d4aa9f6b542e9059ae-s100-c85.jpg" class="img" alt="Rob Stein">
+        </a>
+      </div>
+
+    <p class="byline__name byline__name--block">
+      <a href="https://www.npr.org/people/146944972/rob-stein" rel="author" data-metrics="{&quot;action&quot;:&quot;Click Byline&quot;,&quot;category&quot;:&quot;Story Metadata&quot;}">
+        Rob Stein
+      </a>
+    </p>
+
+      <a class="byline__social-handle byline__social-handle--5" href="https://www.twitter.com/robsteinnews" data-metrics="{&quot;action&quot;:&quot;Click Social Handle&quot;,&quot;category&quot;:&quot;Story Metadata&quot;}">
+        Twitter
+      </a>
+      <a class="byline__social-handle byline__social-handle--1" href="https://www.facebook.com/rob.stein" data-metrics="{&quot;action&quot;:&quot;Click Social Handle&quot;,&quot;category&quot;:&quot;Story Metadata&quot;}">
+        Facebook
+      </a>
+  </div>
+              </div>
+           </div>
+
+  <!-- END CLASS="BUCKETWRAP BYLINE" ID="RES587986181" PREVIEWTITLE="BYLINES" -->
+        </div>
+     </div>
+
+  <!-- END CLASS="STORY-META__TWO" -->
+  </div>
+
+  <!-- END ID="STORY-META" CLASS="STORY-META HAS-BYLINE" -->
+  <div id="storytext" class="storytext storylocation linkLocation">
+        <div id="res588369600" class="bucketwrap image large">
+              <div class="imagewrap" data-crop-type="">
+      <img src="//media.npr.org/assets/img/2018/02/23/obesity-kids_custom-d9ac2e3bab77c56815b792b9ef1017ab85f6c209-s1500-c85.jpg" class="img" alt="">
+          <div class="enlarge-options">
+
+          <button class="enlargebtn">Enlarge this image</button></div>
+  </div>
+  <div class="credit-caption">
+      <div class="caption-wrap">
+          <div class="caption" aria-label="Image caption">
+              <p>
+                  Despite a push in recent years for healthier snacks and more exercise for U.S. kids, the prevalence of obesity is still too high, pediatricians say.
+
+                  <b class="credit" aria-label="Image credit">
+
+                      Lawrence K. Ho/LA Times via Getty Images
+
+                  </b>
+                  <b class="hide-caption"><b>hide caption</b></b>
+              </p>
+          </div>
+
+
+              <b class="toggle-caption"><b>toggle caption</b></b>
+      </div>
+
+      <span class="credit" aria-label="Image credit">
+
+          Lawrence K. Ho/LA Times via Getty Images
+
+      </span>
+  </div>
+  <div class="enlarge_measure">
+      <div class="img_wrap">
+          <img data-original="https://media.npr.org/assets/img/2018/02/23/obesity-kids_enl-d9ac2e3bab77c56815b792b9ef1017ab85f6c209-s1200.jpg" alt="">
+      </div>
+  </div>
+  <div class="enlarge_html">
+      <div class="image_data">
+          <p class="caption">Despite a push in recent years for healthier snacks and more exercise for U.S. kids, the prevalence of obesity is still too high, pediatricians say.</p>
+          <span class="credit" aria-label="Image credit">
+
+              Lawrence K. Ho/LA Times via Getty Images
+
+          </span>
+      </div>
+  </div>
+     </div>
+     <p>Hopes were dashed this week that the United States was finally making progress in the fight against childhood obesity.</p>   <p>Contrary to previous reports, the epidemic of fat has not abated. In fact, there's been a big jump in obesity among the nation's youngest children, according to the <a href="https://doi.org/10.1542/peds.2017-3459">latest analysis</a> of federal data, published Monday in the journal <em>Pediatrics</em>.</p>   <p>"The main take-home message for me is that, clearly, obesity remains a problem," says <a href="https://scholars.duke.edu/person/asheley.skinner">Asheley Skinner</a>, an associate professor of population health services at Duke University and leader of the analysis. "It's not improving."</p>   <div id="res588323193" class="bucketwrap internallink insettwocolumn inset2col ">
+              <div class="bucket img">
+                    <a id="featuredStackSquareImage509374443" href="https://www.npr.org/sections/health-shots/2017/01/12/509374443/obesity-linked-diagnoses-on-the-rise-among-kids-and-teens" data-metrics="{&quot;category&quot;:&quot;Story to Story&quot;,&quot;action&quot;:&quot;Click Internal Link&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2017\/01\/12\/509374443\/obesity-linked-diagnoses-on-the-rise-among-kids-and-teens&quot;}"><img src="//media.npr.org/assets/img/2017/01/12/promo-obesity-seamus_sq-503b238050d1553799e6296839cd47bad3d5358e-s500-c85.png" class="img" alt="Obesity-Linked Diagnoses On The Rise Among Kids And Teens"></a>         <div class="bucketblock">
+                          <h3 class="slug"><a href="https://www.npr.org/sections/health-shots/">Shots - Health News </a></h3>
+              <h3><a href="https://www.npr.org/sections/health-shots/2017/01/12/509374443/obesity-linked-diagnoses-on-the-rise-among-kids-and-teens" data-metrics="{&quot;category&quot;:&quot;Story to Story&quot;,&quot;action&quot;:&quot;Click Internal Link&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2017\/01\/12\/509374443\/obesity-linked-diagnoses-on-the-rise-among-kids-and-teens&quot;}">Obesity-Linked Diagnoses On The Rise Among Kids And Teens</a></h3>
+           </div>
+
+  <!-- END CLASS="BUCKETBLOCK" -->
+        </div>
+
+  <!-- END CLASS="BUCKET IMG" -->
+     </div>
+
+  <!-- END ID="RES588323193" CLASS="BUCKETWRAP INTERNALLINK INSETTWOCOLUMN INSET2COL " -->
+     <p>Childhood obesity rates have been rising for decades, sparking widespread alarm among public health researchers and officials. Obese children tend to become obese adults, who are prone to many health problems, including cancer, heart disease and Type 2 diabetes.</p>   <p>But hopes <a href="https://www.npr.org/sections/health-shots/2013/08/06/209213524/falling-obesity-rates-among-preschoolers-mark-healthful-trend">rose</a> several years ago that the epidemic might be ebbing, at least in some parts of the country. Some researchers suggested efforts such as Michelle's Obama's <a href="https://letsmove.obamawhitehouse.archives.gov/">Let's Move</a> campaign might be working.</p>   <p>Unfortunately, that doesn't appear to be the case, Skinner and her colleagues discovered when they analyzed the latest national data from the federal Centers for Disease Control and Prevention's <a href="https://www.cdc.gov/nchs/nhanes/index.htm">National Health and Nutrition Examination Survey</a>. The NHANES survey is one of the federal government's main measures of childhood obesity.</p>
+     <svg id="chart-svg" width=680 height=450></svg>
+     <p>The latest analysis <em>s</em>hows that the percentage of children ages 2 to 19 who are obese increased from 14 percent in 1999 to 18.5 percent in 2015 and 2016.</p>
+
+
+     <p>Moreover, there was no statistical difference in the overall obesity rate between the 2013-2014 and 2015-2016 surveys — undercutting hopes that obesity had begun to decline in recent years.</p>   <aside id="ad-backstage-wrap" aria-label="advertisement">
+
+
+      <div id="ad-backstage-News_Health" class="ad-backstage" data-ad-config="{&quot;network&quot;:&quot;\/6735\/n6735&quot;,&quot;site&quot;:{&quot;default&quot;:&quot;NPR&quot;,&quot;mobile&quot;:&quot;NPRMOBILE&quot;},&quot;zone&quot;:&quot;News_Health&quot;,&quot;targets&quot;:{&quot;testserver&quot;:&quot;false&quot;,&quot;storyId&quot;:&quot;587985555&quot;,&quot;agg&quot;:&quot;103537970&quot;,&quot;blog&quot;:&quot;103537970&quot;},&quot;location&quot;:&quot;backstage&quot;,&quot;deferred&quot;:false,&quot;isBetweenContent&quot;:true}" style="display: none;"><div id="google_ads_iframe_/6735/n6735.NPRMOBILE/News_Health_0__container__" style="border: 0pt none;"><iframe id="google_ads_iframe_/6735/n6735.NPRMOBILE/News_Health_0" title="3rd party ad content" name="google_ads_iframe_/6735/n6735.NPRMOBILE/News_Health_0" width="1300" height="250" scrolling="no" marginwidth="0" marginheight="0" frameborder="0" srcdoc="" style="border: 0px; vertical-align: bottom;"></iframe></div></div>
+
+  </aside>   <div id="res588322745" class="bucketwrap internallink insettwocolumn inset2col ">
+              <div class="bucket img">
+                    <a id="featuredStackSquareImage313156681" href="https://www.npr.org/sections/thesalt/2014/05/19/313156681/fed-up-another-food-documentary-war-wades-into-the-obesity-debate" data-metrics="{&quot;category&quot;:&quot;Story to Story&quot;,&quot;action&quot;:&quot;Click Internal Link&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/thesalt\/2014\/05\/19\/313156681\/fed-up-another-food-documentary-war-wades-into-the-obesity-debate&quot;}"><img src="//media.npr.org/assets/img/2014/05/19/fed-up-1_sq-4275579aaa1038a62b5915ada7576fc563d64708-s500-c85.jpg" class="img" alt="'Fed Up' Portrays Obese Kids As Victims In A Sugar-Coated World"></a>         <div class="bucketblock">
+                          <h3 class="slug"><a href="https://www.npr.org/sections/thesalt/">The Salt </a></h3>
+              <h3><a href="https://www.npr.org/sections/thesalt/2014/05/19/313156681/fed-up-another-food-documentary-war-wades-into-the-obesity-debate" data-metrics="{&quot;category&quot;:&quot;Story to Story&quot;,&quot;action&quot;:&quot;Click Internal Link&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/thesalt\/2014\/05\/19\/313156681\/fed-up-another-food-documentary-war-wades-into-the-obesity-debate&quot;}">'Fed Up' Portrays Obese Kids As Victims In A Sugar-Coated World</a></h3>
+           </div>
+
+  <!-- END CLASS="BUCKETBLOCK" -->
+        </div>
+
+  <!-- END CLASS="BUCKET IMG" -->
+     </div>
+
+  <!-- END ID="RES588322745" CLASS="BUCKETWRAP INTERNALLINK INSETTWOCOLUMN INSET2COL " -->
+     <p>In fact, the scientists say, there was a disturbingly large increase in obesity among the youngest children — ages 2 to 5 years old. In that age group, obesity increased from about 9 percent to almost 14 percent.</p>   <p>"It is a big jump," Skinner says. "That's the highest level of obesity that we've seen in 2- to 5-year-olds since 1999."</p>   <p>The increase more than makes up for any decrease that may have occurred in the previous survey, Skinner says.</p>   <p>"Obesity in the youngest group is a concern," she says, "because when obesity starts younger, most of these children continue to have obesity throughout childhood and into adulthood. "The earlier you start seeing this, the harder it is to address it for these kids."</p>   <p>"We have known about this epidemic of childhood obesity — and have been pouring research dollars and public health dollars into this problem — for at least 20 years," says <a href="https://medschool.duke.edu/about-us/our-faculty/sarah-commisso-armstrong">Dr. Sarah Armstrong</a>, an associate professor of pediatrics at Duke who helped conduct the analysis. "And despite that, we don't seem to be making a big dent in the situation."</p>   <p>"We need to double down our efforts and find out what's going to work," she says, "or the health of our future generation is really in jeopardy."</p>   <div id="res588323734" class="bucketwrap internallink insettwocolumn inset2col ">
+              <div class="bucket img">
+                    <a id="featuredStackSquareImage476495319" href="https://www.npr.org/sections/health-shots/2016/05/03/476495319/cyclist-teaches-kids-to-use-fun-to-prevent-type-2-diabetes" data-metrics="{&quot;category&quot;:&quot;Story to Story&quot;,&quot;action&quot;:&quot;Click Internal Link&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2016\/05\/03\/476495319\/cyclist-teaches-kids-to-use-fun-to-prevent-type-2-diabetes&quot;}"><img src="//media.npr.org/assets/img/2016/05/02/rangel-1_sq-22354a5c015c10ceadbdb65c72fb61d158827f3d-s500-c85.jpg" class="img" alt="Cyclist Teaches Kids To Use Fun To Prevent Type 2 Diabetes"></a>         <div class="bucketblock">
+                          <h3 class="slug"><a href="https://www.npr.org/sections/health-shots/">Shots - Health News </a></h3>
+              <h3><a href="https://www.npr.org/sections/health-shots/2016/05/03/476495319/cyclist-teaches-kids-to-use-fun-to-prevent-type-2-diabetes" data-metrics="{&quot;category&quot;:&quot;Story to Story&quot;,&quot;action&quot;:&quot;Click Internal Link&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2016\/05\/03\/476495319\/cyclist-teaches-kids-to-use-fun-to-prevent-type-2-diabetes&quot;}">Cyclist Teaches Kids To Use Fun To Prevent Type 2 Diabetes</a></h3>
+           </div>
+
+  <!-- END CLASS="BUCKETBLOCK" -->
+        </div>
+
+  <!-- END CLASS="BUCKET IMG" -->
+     </div>
+
+  <!-- END ID="RES588323734" CLASS="BUCKETWRAP INTERNALLINK INSETTWOCOLUMN INSET2COL " -->
+     <p>In an <a href="https://doi.org/10.1542/peds.2017-4078">editorial</a> accompanying the study, <a href="http://www.childrenshospital.org/researchers/david-ludwig">Dr. David Ludwig</a> of Boston Children's Hospital calls for a more comprehensive national strategy for fighting the problem.</p>   <p>"We haven't generated a truly systematic or comprehensive approach across society that addresses all drivers of childhood obesity — poor diet, a lack of physical activity and a healthy food supply that will encourage everyone to eat well," Ludwig says. "We need a truly national, comprehensive strategy to tackle this epidemic."</p>   <p>Hispanic and African-American children continue to be much more likely to become obese than white children, the analysis shows.</p>   <p><a href="https://publichealth.lsuhsc.edu/faculty_newsite/faculty_detail.aspx?name=sothern_melinda">Melinda Sothern</a>, director of behavioral and community health sciences at Louisiana State University, suggests that trend may be the result of a "perfect storm" of stress, which, when combined with a "lack of access to healthy foods and opportunities for outdoor play," can affect biology on a genetic level.</p>
+  </div>
+   <!--googleoff: index--><div class="tags">
+        <ul>
+              <li><a class="tag tag--story" data-metrics="{&quot;category&quot;:&quot;story actions&quot;,&quot;action&quot;:&quot;click tag&quot;}" href="https://www.npr.org/tags/480906347/early-childhood">early childhood</a></li>
+        <li><a class="tag tag--story" data-metrics="{&quot;category&quot;:&quot;story actions&quot;,&quot;action&quot;:&quot;click tag&quot;}" href="https://www.npr.org/tags/351292410/obesity-epidemic">obesity epidemic</a></li>
+        <li><a class="tag tag--story" data-metrics="{&quot;category&quot;:&quot;story actions&quot;,&quot;action&quot;:&quot;click tag&quot;}" href="https://www.npr.org/tags/263117216/american-diet">American diet</a></li>
+        <li><a class="tag tag--story" data-metrics="{&quot;category&quot;:&quot;story actions&quot;,&quot;action&quot;:&quot;click tag&quot;}" href="https://www.npr.org/tags/135846044/exercise">exercise</a></li>
+        <li><a class="tag tag--story" data-metrics="{&quot;category&quot;:&quot;story actions&quot;,&quot;action&quot;:&quot;click tag&quot;}" href="https://www.npr.org/tags/126567842/heart-disease-stroke">Heart Disease &amp; Stroke</a></li>
+        <li><a class="tag tag--story" data-metrics="{&quot;category&quot;:&quot;story actions&quot;,&quot;action&quot;:&quot;click tag&quot;}" href="https://www.npr.org/tags/125943404/childhood-obesity">childhood obesity</a></li>
+     </ul>
+  </div>
+
+  <!-- END CLASS="TAGS" -->
+  <div class="share-tools share-tools--secondary" aria-label="Share tools">
+        <ul>
+              <li class="share-tools__service share-tools__service--facebook"><button class="fbStory587985555" data-share-facebook="{&quot;storyId&quot;: 587985555 }" data-metrics="{&quot;action&quot;:&quot;Click Facebook&quot;,&quot;category&quot;:&quot;Share Tools&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2018\/02\/26\/587985555\/no-downturn-in-obesity-among-u-s-kids-report-finds&quot;}"><b class="share-tools__service-name">Facebook</b></button></li>
+        <li class="share-tools__service share-tools__service--twitter"><button class="story587985555" data-share-twitter="{&quot;storyId&quot;: 587985555 }" data-metrics="{&quot;action&quot;:&quot;Click Twitter&quot;,&quot;category&quot;:&quot;Share Tools&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2018\/02\/26\/587985555\/no-downturn-in-obesity-among-u-s-kids-report-finds&quot;}"><b class="share-tools__service-name">Twitter</b></button></li>
+        <li class="share-tools__service share-tools__service--flipboard"><button class="story587985555" data-share-flipboard="{&quot;storyId&quot;: 587985555 }" data-metrics="{&quot;action&quot;:&quot;Click Flipboard&quot;,&quot;category&quot;:&quot;Share Tools&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2018\/02\/26\/587985555\/no-downturn-in-obesity-among-u-s-kids-report-finds&quot;}"><b class="share-tools__service-name">Flipboard</b></button></li>
+        <li class="share-tools__service share-tools__service--email"><button class="share-tools__email-link" data-story-id="587985555" data-metrics="{&quot;action&quot;:&quot;Click Email a Friend&quot;,&quot;category&quot;:&quot;Share Tools&quot;,&quot;label&quot;:&quot;https:\/\/www.npr.org\/sections\/health-shots\/2018\/02\/26\/587985555\/no-downturn-in-obesity-among-u-s-kids-report-finds&quot;}"><b class="share-tools__service-name">Email</b></button></li>
+     </ul>
+  </div>
+
+  <!-- END CLASS="SHARE-TOOLS SHARE-TOOLS--SECONDARY" ARIA-LABEL="SHARE TOOLS" -->
+  <div id="newsletter-acquisition-callout-data" data-newsletter="{&quot;newsletterId&quot;:&quot;health&quot;,&quot;title&quot;:&quot;Health&quot;,&quot;marketingHeader&quot;:&quot;Here's To Your Health&quot;,&quot;frequency&quot;:&quot;every week&quot;,&quot;shortDescription&quot;:&quot;We're reporting in on the latest in medical research, insurance coverage, plus managing your health and the health of the people you love. Coming to your inbox once a week!&quot;,&quot;contentImage&quot;:&quot;&quot;,&quot;staticMarkupDir&quot;:&quot;\/buckets\/blogs\/thesalt\/subnav.html&quot;,&quot;brandingDir&quot;:&quot;\/branding\/sections\/health-shots\/&quot;,&quot;brandingLink&quot;:&quot;https:\/\/www.npr.org\/sections\/health\/&quot;}">
+     </div>
+
+  <!-- END ID="NEWSLETTER-ACQUISITION-CALLOUT-DATA" DATA-NEWSLETTER="{&QUOT;NEWSLETTERID&QUOT;:&QUOT;HEALTH&QUOT;,&QUOT;TITLE&QUOT;:&QUOT;HEALTH&QUOT;,&QUOT;MARKETINGHEADER&QUOT;:&QUOT;HERE&#039;S TO YOUR HEALTH&QUOT;,&QUOT;FREQUENCY&QUOT;:&QUOT;EVERY WEEK&QUOT;,&QUOT;SHORTDESCRIPTION&QUOT;:&QUOT;WE&#039;RE REPORTING IN ON THE LATEST IN MEDICAL RESEARCH, INSURANCE COVERAGE, PLUS MANAGING YOUR HEALTH AND THE HEALTH OF THE PEOPLE YOU LOVE. COMING TO YOUR INBOX ONCE A WEEK!&QUOT;,&QUOT;CONTENTIMAGE&QUOT;:&QUOT;&QUOT;,&QUOT;STATICMARKUPDIR&QUOT;:&QUOT;\/BUCKETS\/BLOGS\/THESALT\/SUBNAV.HTML&QUOT;,&QUOT;BRANDINGDIR&QUOT;:&QUOT;\/BRANDING\/SECTIONS\/HEALTH-SHOTS\/&QUOT;,&QUOT;BRANDINGLINK&QUOT;:&QUOT;HTTPS:\/\/WWW.NPR.ORG\/SECTIONS\/HEALTH\/&QUOT;}" -->
+  <div id="callout-end-of-story-mount"><section data-reactroot="" class="callout callout--health"><div class="callout__inner"><h2 class="callout__header">Here's To Your Health</h2><p class="callout__description">We're reporting in on the latest in medical research, insurance coverage, plus managing your health and the health of the people you love. Coming to your inbox once a week!</p><b class="callout__error"></b><form class="callout__form"><label for="callout__input">E-mail address</label><input type="email" class="callout__input" id="callout__input" name="email" placeholder="What's your email?"><input type="submit" class="callout__submit" value="subscribe" data-metrics="{&quot;action&quot;:&quot;subscribe&quot;,&quot;category&quot;:&quot;newsletter&quot;,&quot;label&quot;:&quot;health&quot;}"></form><footer class="callout__footer"><p><!-- react-text: 12 -->By subscribing, you agree to <!-- /react-text --><a href="/about-npr/179876898/terms-of-use">NPR's terms of use</a><!-- react-text: 14 --> and <!-- /react-text --><a href="/about-npr/179878450/privacy-policy">privacy policy</a><!-- react-text: 16 -->.<!-- /react-text --></p></footer></div></section></div>
+
+  <!-- END ID="CALLOUT-END-OF-STORY-MOUNT" -->
+  <aside id="end-of-story-recommendations-mount" class="recommended-stories" aria-label="recommended stories"><div data-reactroot=""></div></aside>
+  <!-- END ID="END-OF-STORY-RECOMMENDATIONS-MOUNT" CLASS="RECOMMENDED-STORIES" ARIA-LABEL="RECOMMENDED STORIES" -->
+  </article>
+
+</body></html>

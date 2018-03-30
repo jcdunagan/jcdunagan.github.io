@@ -1,0 +1,56 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[hyphens]{url}
+
+\title{CSE557 Assignment 5 Report}
+\author{John Dunagan}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Source Article}
+
+\subsection{Article}
+
+For this assignment I chose the NPR Article ``No Downturn In Obesity Among U.S. Kids, Report Finds" (\url{https://www.npr.org/sections/health-shots/2018/02/26/587985555/no-downturn-in-obesity-among-u-s-kids-report-finds}).  This article focuses on the rising rates of childhood obesity rates in the United States.   Over the past couple years there has been speculation that the epidemic of childhood obesity was in regress, but a recent study from \textit{Pediatrics} that determined that this is not the case.  The study itself is based on the the most recent results of the biennial National Health and Nutrition Examination Survey (NHANES) for the 2014-2016 cycle.
+
+\subsection{Motivation}
+
+My main motivation for choosing this particular article is that it contains a lot of numbers and statistics from the source dataset, and alludes constantly to rising trend of childhood obesity, but never provides any visuals to illustrate this trend to the reader or let them explore the data for themselves.   
+
+\subsection{Dataset}
+
+To find data for this visualization, I went to the study that the article was based on (\url{http://pediatrics.aappublications.org/content/141/3/e20173459}).  This study provides several tables of data extracted from NHANES, which list the per-class obesity rates for children ages 2-19 against year, age range, gender, and ethnicity.  Unfortunately, ethnicity is only provided for the most recent two-year cycle, so it is absent from the visualization.  The data I used was contained in ``Table 2", which I extracted using BeautifulSoup.
+
+
+\section{Design}
+
+\subsection{Criteria}
+
+
+The article cites many statistics, several of which pertain to particular age ranges and genders of children.  I designed a visualization to fit the following criteria
+
+\begin{enumerate}
+    \item the visualization should make apparent to the reader the rising number of overweight and obese children
+    \item the reader should be able to explore time series data for subsets of the population by age and gender (e.g. ``how has the rate of class 1 obesity increased over time?")
+    \item the visualization should support comparison of obesity rates between different age groups and genders (e.g. ``are obesity rates higher in girls than in boys?")
+    \item the visualization should also provide insight into the different classes of obesity (discussed further in the dataset description) and how they have changed with respect to each other (e.g. ``is the spectrum of overweight children shifting towards obesity?")
+    \item The design should accurately reflect the relationship between obesity classes (e.g. that if you are Class II Obese, you are also Overweight and Class III Obese)
+\end{enumerate}
+
+\subsection{Implementation}
+
+
+To meet all these criteria, I ended up chosing to implement a two-chart display with a time-series area chart on the right and a stacked bar graph on the left.  The area chart/stacked bar formats help to convey the relationship between the different types of obesity.  The area chart displays obesity rates over time and useful to get a general sense of the trend of overweight/obesity.  The user can also ``filter" by age and gender to view the series data for specific demographics (implemented using a convoluted series of nests and maps).  The bar chart provides comparison between demographics for specific years.  The user can select years by clicking on different x locations in the series chart (implemented using overlays).  The data for the selected year then show up in the bar chart, segmented by either age or gender, which the user selects at the bottom of the graph.   The interaction allows the user to explore the data themselves and also follow along with the numbers provided in the article, adjusting the visualization to see the correlations that are being pointed out.
+
+This detail view went through several iterations, including an icon array, but I eventually settled on stacked bar because it conveyed the most info in the most concise manner.
+
+
+\subsection{Challenges}
+
+The main unexpected challenge of this visualization was that the trend is generally very subtle.  Although the difference of a few percentage points has striking implications for national health,  it is not altogether very visually striking.  If the series chart is displayed at an aspect ratio of greater than 1.3 or so, the trend almost dissappears. This was an issue because my original design was a stacked display, with the time series thin and long at the top and the detail view as a collection of icon arrays at the bottom.  But when stacked, the trend disappears, so I ended up putting the two side-by-side to better illustrate the trend.  The addition of data markers also makes it easier to compare temporally disparate values.
+
+
+\end{document}
